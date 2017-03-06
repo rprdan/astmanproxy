@@ -444,9 +444,11 @@ int do_AddToStack(char *uniqueid, struct message *m, struct mansession *s, int w
 			}
 			if( m_size < MAX_STACKDATA && (msg = malloc(m_size)) ) {
 				memset(msg, 0, m_size);
-				if( withbody == 1 )
+				if( withbody == 1 ) {
+					if( t->message )
+						free( t->message );
 					t->message = msg;
-				else {
+				} else {
 					if( t->state )
 						free( t->state );
 					t->state = msg;
@@ -540,6 +542,8 @@ void DelFromStack(struct message *m, struct mansession *s)
 		{
 			if( t->message )
 				free( t->message );
+			if( t->state )
+				free( t->state );
 			if( prev )
 				prev->next = t->next;
 			else
@@ -569,6 +573,8 @@ void FreeStack(struct mansession *s)
 		n = t->next;		// Grab next entry BEFORE we free the slot
 		if( t->message )
 			free( t->message );
+		if( t->state )
+			free( t->state );
 		free( t );
 		t = n;
 		s->depth--;
@@ -732,7 +738,11 @@ int ValidateAction(struct message *m, struct mansession *s, int inbound) {
 			}
 		}
 		if( s->user.filter_bits & FILT_NOVAR ) {
-			if( !strcasecmp( event, "SetVar" ) ) {
+			if( !strcasecmp( event, "Set" ) ) {
+				if( debug )
+					debugmsg("NOVAR set. Blocked Set");
+				return 0;
+			} else if( !strcasecmp( event, "SetVar" ) ) {
 				if( debug )
 					debugmsg("NOVAR set. Blocked SetVar");
 				return 0;
