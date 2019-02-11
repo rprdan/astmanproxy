@@ -84,12 +84,12 @@ void leave(int sig) {
 		pthread_mutex_unlock(&c->lock);
 		if (c->server) {
 			if (debug)
-				debugmsg("asterisk@%s: closing session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+				debugmsg("asterisk@%s: closing server session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
 			c->output->write(c, &sm);
 			logmsg("Shutdown, closed server %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
 		} else {
 			if (debug)
-				debugmsg("client@%s: closing session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+				debugmsg("client@%s: closing client session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
 			c->output->write(c, &cm);
 			logmsg("Shutdown, closed client %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
 		}
@@ -151,6 +151,7 @@ void Usage( void )
 	printf("Usage: astmanproxy [-d|-h|-v]\n");
 	printf(" -d : Start in Debug Mode\n");
 	printf(" -f : Run in foreground. Don't fork\n");
+	printf(" -g : Enable core dumps\n");
 	printf(" -h : Displays this message\n");
 	printf(" -v : Displays version information\n");
 	printf("Start with no options to run as daemon\n");
@@ -388,8 +389,8 @@ void *session_do(struct mansession *s)
 {
 	struct mansession *svrs = NULL;
 	struct message m;
-	int res;
-	int tries = 5;
+	int res, i, tries = 5;
+	char iabuf[INET_ADDRSTRLEN];
 	char *proxyaction, *actionid, *action, *key;
 
 	if (s->input->onconnect)
@@ -434,6 +435,12 @@ void *session_do(struct mansession *s)
 		m.session = s;
 
 		if (res > 0) {
+			if (debug) {
+				for(i=0; i<m.hdrcount; i++) {
+					debugmsg("client@%s got: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr), m.headers[i]);
+				}
+			}
+
 			/* Check for anything that requires proxy-side processing */
 			if (pc.key[0] != '\0' && !s->authenticated) {
 				key = astman_get_header(&m, "ProxyKey");
@@ -811,9 +818,11 @@ int main(int argc, char *argv[])
 	int flag;				/* for socket reuse */
 	pid_t pid;
 	char i;
+	struct rlimit l;
+	int core = 0;
 
 	/* Figure out if we are in debug mode, handle other switches */
-	while (( i = getopt( argc, argv, "dhvf" ) ) != EOF )
+	while (( i = getopt( argc, argv, "dhvfg" ) ) != EOF )
 	{
 		switch( i ) {
 			case 'f':
@@ -821,6 +830,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'd':
 				debug++;
+				break;
+			case 'g':
+				core = 1;
 				break;
 			case 'h':
 				Usage();
@@ -841,9 +853,34 @@ int main(int argc, char *argv[])
 	LoadHandlers();
 	debugmsg("loaded handlers");
 
+
+	if(core) {
+		memset(&l, 0, sizeof(l));
+		l.rlim_cur = RLIM_INFINITY;
+		l.rlim_max = RLIM_INFINITY;
+		if (setrlimit(RLIMIT_CORE, &l)) {
+			fprintf(stderr, "Unable to disable core size resource limit: %s\n", strerror(errno));
+		}
+	}
+
 	if (SetProcUID()) {
 		fprintf(stderr,"Cannot set user/group!	Check proc_user and proc_group config setting!\n");
 		exit(1);
+	}
+
+
+	if(core) {
+		if (prctl(PR_SET_DUMPABLE, 1, 0, 0, 0) < 0) {
+			fprintf(stderr, "Unable to set the process for core dumps after changing to a non-root user. %s\n", strerror(errno));
+		}
+
+		char dir[PATH_MAX];
+		if (!getcwd(dir, sizeof(dir)) || eaccess(dir, W_OK)) {
+			fprintf(stderr, "Unable to write to the running directory (%s).  Changing to '/tmp'.\n", strerror(errno));
+			if (chdir("/tmp")) {
+				fprintf(stderr, "chdir(\"/\") failed?!! %s\n", strerror(errno));
+			}
+		}
 	}
 
 	/* If we are not in debug mode, then fork to background */

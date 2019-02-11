@@ -18,6 +18,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <dlfcn.h>
+#include <sys/resource.h>
+#include <sys/prctl.h>
+#include <libgen.h>
 #ifdef __APPLE__
 	#include "poll-compat.h"
 #else
