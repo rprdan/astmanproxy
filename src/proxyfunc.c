@@ -10,6 +10,7 @@
 
 #include "astmanproxy.h"
 #include "md5.h"
+#include <ow-crypt.h>
 
 extern struct mansession *sessions;
 extern struct iohandler *iohandlers;
@@ -131,6 +132,18 @@ void *ProxySetAutoFilter(struct mansession *s, struct message *m) {
 	return 0;
 }
 
+int AuthCrypt(char *pass, char *hash) {
+	if (debug) {
+		debugmsg("Crypt password=%s, hash=%s", pass, hash);
+		debugmsg("I get hash=%s", crypt(pass, hash));
+	}
+
+	if (!strcmp(crypt(pass, hash), hash))
+		return 0;
+	else
+		return 1;
+}
+
 int AuthMD5(char *key, char *challenge, char *password) {
 	int x;
 	int len=0;
@@ -154,9 +167,9 @@ int AuthMD5(char *key, char *challenge, char *password) {
 		debugmsg("MD5 computed=%s, received=%s", md5key, key);
 	}
 	if (!strcmp(md5key, key))
-	return 0;
+		return 0;
 	else
-	return 1;
+		return 1;
 }
 
 void *ProxyLogin(struct mansession *s, struct message *m) {
@@ -170,6 +183,8 @@ void *ProxyLogin(struct mansession *s, struct message *m) {
 	actionid = astman_get_header(m, "ActionID");
 
 	memset(&mo, 0, sizeof(struct message));
+	if( actionid && strlen(actionid) > 0 )
+		AddHeader(&mo, "ActionID: %s", actionid);
 	if( debug )
 		debugmsg("Login attempt as: %s/%s", user, secret);
 
@@ -177,26 +192,32 @@ void *ProxyLogin(struct mansession *s, struct message *m) {
 	pu = pc.userlist;
 	while( pu ) {
 		if ( !strcmp(user, pu->username) ) {
-			if (!AuthMD5(key, s->challenge, pu->secret) || !strcmp(secret, pu->secret) ) {
-				AddHeader(&mo, "Response: Success");
-				AddHeader(&mo, "Message: Authentication accepted");
-				if( actionid && strlen(actionid) > 0 )
-					AddHeader(&mo, "ActionID: %s", actionid);
-				s->output->write(s, &mo);
-				pthread_mutex_lock(&s->lock);
-				s->authenticated = 1;
-				strcpy(s->user.channel, pu->channel);
-				strcpy(s->user.icontext, pu->icontext);
-				strcpy(s->user.ocontext, pu->ocontext);
-				strcpy(s->user.account, pu->account);
-				strcpy(s->user.server, pu->server);
-				strcpy(s->user.more_events, pu->more_events);
-				s->user.filter_bits = pu->filter_bits;
-				pthread_mutex_unlock(&s->lock);
-				if( debug )
-					debugmsg("Login as: %s", user);
-				break;
+			if (pu->secret[0] == '$') {
+				if (AuthCrypt(secret, pu->secret)) {
+					pu = pu->next;
+					continue;
+				}
+			} else if (AuthMD5(key, s->challenge, pu->secret) && strcmp(secret, pu->secret) ) {
+				pu = pu->next;
+				continue;
 			}
+
+			AddHeader(&mo, "Response: Success");
+			AddHeader(&mo, "Message: Authentication accepted");
+			s->output->write(s, &mo);
+			pthread_mutex_lock(&s->lock);
+			s->authenticated = 1;
+			strcpy(s->user.channel, pu->channel);
+			strcpy(s->user.icontext, pu->icontext);
+			strcpy(s->user.ocontext, pu->ocontext);
+			strcpy(s->user.account, pu->account);
+			strcpy(s->user.server, pu->server);
+			strcpy(s->user.more_events, pu->more_events);
+			s->user.filter_bits = pu->filter_bits;
+			pthread_mutex_unlock(&s->lock);
+			if( debug )
+				debugmsg("Login as: %s", user);
+			break;
 		}
 		pu = pu->next;
 	}

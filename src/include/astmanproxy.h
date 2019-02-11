@@ -27,7 +27,8 @@
 #define BUFSIZE		 1024
 #define MAX_HEADERS	 256
 #define MAX_LEN		 1024
-#define MAX_LEN_INBUF	 (1024*1024)
+#define MAX_LEN_INBUF	 (4*1024*1024)
+#define MAX_LEN_NETBUF	 (2*1024*1024)
 #define MAX_STACK	 1024
 #define MAX_STACKDATA	 (1024*32)
 
@@ -172,7 +173,7 @@ int get_input_block(struct mansession *s, struct message *m);
 int get_input(struct mansession *s, char *output);
 int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt);
 void destroy_session(struct mansession *s);
-int ast_carefulwrite(int fd, char *s, int len, int timeoutms);
+int ast_carefulwrite(struct mansession *c, char *s, int len);
 extern void *SendError(struct mansession *s, char *errmsg, char *actionid);
 
 int close_sock(int socket);

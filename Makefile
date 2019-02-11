@@ -21,13 +21,13 @@ PREFIX:= /usr/local
 BINDIR := $(DESTDIR)$(PREFIX)/sbin
 
 # For compilation dependencies
-MODS := astmanproxy config config_perms common proxyfunc log ssl md5
+MODS := astmanproxy config config_perms common proxyfunc log ssl md5 crypt_blowfish crypt_gensalt wrapper
 HANDLERS := xml standard csv http
 SOBJS := $(HANDLERS:%=%.so)
 LIBS := -lssl
 
 # Add -g below for debug/GDB symbols
-CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC -Isrc/include -I/usr/include/openssl
+CFLAGS:=-Wall -O2 -D_REENTRANT -D_GNU_SOURCE -fPIC
 
 ifeq (${OSARCH},Darwin)  
   LIBS+=-lresolv
@@ -48,7 +48,8 @@ ifeq (${OSARCH},Darwin)
   MKTEMP=/usr/bin/mktemp
 else
   #These are used for all but Darwin
-  CFLAGS+=-iquotesrc/include
+  #CFLAGS+=-I-
+  CFLAGS+=-iquote$(shell pwd)/src/include
   LIBS+=-ldl -pthread
   ASTLINK=-Wl,-E
   SOLINK=-shared -Xlinker -x
@@ -56,6 +57,8 @@ else
   CERTDIR := /var/lib/asterisk/certs
   MKTEMP=/bin/mktemp
 endif
+
+CFLAGS+=-Isrc/include -I/usr/include/openssl
 
 MODDIR := $(LIBDIR)/modules
 DEFINES:='-DPROXY_VERSION="$(VERSION)"' '-DCDIR="$(CONFDIR)"' '-DCFILE="$(CONFFILE)"'
@@ -73,8 +76,8 @@ VPATH = src
 
 
 # For printing only
-SRCS := $(MODS:%=src/%.c)
-HDRS := src/include/astmanproxy.h
+SRCS := $(MODS:%=%.c)
+HDRS := astmanproxy.h
 
 all: astmanproxy cert
 

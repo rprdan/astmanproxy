@@ -93,7 +93,7 @@ void *add_userperm(char* username, char *userspec, struct proxy_user **pu) {
 }
 
 void *processperm(char *s, struct proxy_user **pu) {
-	char name[80],value[80];
+	char name[80],value[256];
 	int nvstate = 0;
 
 
