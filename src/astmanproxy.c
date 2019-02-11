@@ -892,10 +892,12 @@ int main(int argc, char *argv[])
 	serv_sock_addr.sin_port = htons((short)pc.listen_port);
 
 	/* Set listener socket re-use options */
-	setsockopt(asock, SOL_SOCKET, SO_REUSEADDR, (void *)&flag, sizeof(flag));
+	if(setsockopt(asock, SOL_SOCKET, SO_REUSEADDR, (void *)&flag, sizeof(flag)) < 0)
+		fprintf(stderr,"Error setting SO_REUSEADDR on listener socket!\n");
 	lingerstruct.l_onoff = 1;
 	lingerstruct.l_linger = 5;
-	setsockopt(asock, SOL_SOCKET, SO_LINGER, (void *)&lingerstruct, sizeof(lingerstruct));
+	if(setsockopt(asock, SOL_SOCKET, SO_LINGER, (void *)&lingerstruct, sizeof(lingerstruct)) < 0)
+		fprintf(stderr,"Error setting SO_LINGER on listener socket!\n");
 	
 	if (bind(asock, (struct sockaddr *) &serv_sock_addr, sizeof serv_sock_addr ) < 0) {
 		fprintf(stderr,"Cannot bind to listener socket!\n");
