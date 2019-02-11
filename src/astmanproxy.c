@@ -20,6 +20,7 @@ extern int SetProcUID( void );
 extern void *proxyaction_do(char *proxyaction, struct message *m, struct mansession *s);
 extern void *ProxyLogin(struct mansession *s, struct message *m);
 extern void *ProxyLogoff(struct mansession *s, struct message *m);
+extern void *ProxyFullyBooted(struct mansession *s);
 extern int  ValidateAction(struct message *m, struct mansession *s, int inbound);
 extern int  AddToStack(struct message *m, struct mansession *s, int withbody);
 extern void DelFromStack(struct message *m, struct mansession *s);
@@ -450,6 +451,8 @@ void *session_do(struct mansession *s)
 			if ( !strcasecmp(action, "Login") ) {
 				s->authenticated = 0;
 				ProxyLogin(s, &m);
+				if ( s->authenticated )
+					ProxyFullyBooted(s);
 			} else if ( !strcasecmp(action, "Logoff") )
 				ProxyLogoff(s, &m);
 			else if ( !strcasecmp(action, "Challenge") )

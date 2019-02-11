@@ -254,6 +254,17 @@ void *ProxyLogoff(struct mansession *s, struct message *m) {
 	return 0;
 }
 
+void *ProxyFullyBooted(struct mansession *s) {
+	struct message mo;
+
+	memset(&mo, 0, sizeof(struct message));
+	AddHeader(&mo, "Event: FullyBooted");
+	AddHeader(&mo, "Privilege: system,all");
+	AddHeader(&mo, "Status: Fully Booted");
+	s->output->write(s, &mo);
+	return 0;
+}
+
 int ProxyAddServer(struct mansession *s, struct message *m) {
 	struct message mo;
 	struct ast_server *srv;
