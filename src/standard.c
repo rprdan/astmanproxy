@@ -65,16 +65,17 @@ int _write(struct mansession *s, struct message *m) {
 		if( ! strlen(m->headers[i]) )
 			continue;
 		res = 0;
-		if( strlen(m->headers[i]) > 1480 || at + strlen(m->headers[i]) > 1480 )
-			if( at ) {
-				res = ast_carefulwrite(s, w_buf, at);
-				at = 0;
-				if ( res < 0 ) {
-					s->dead = 1;
-					break;
-				}
+		if( at > 0 && at + strlen(m->headers[i]) > 1480 ) {
+			/* have existing buffer and we're about to blow that buffer, flush it */
+			res = ast_carefulwrite(s, w_buf, at);
+			at = 0;
+			if ( res < 0 ) {
+				s->dead = 1;
+				break;
 			}
+		}
 		if( strlen(m->headers[i]) > 1480 ) {
+			/* too big, bypass buffer, above block ensures it has been flushed */
 			res = ast_carefulwrite(s, m->headers[i], strlen(m->headers[i]));
 			if ( res >= 0 )
 				res = ast_carefulwrite(s, "\r\n", 2);

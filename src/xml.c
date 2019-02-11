@@ -157,7 +157,10 @@ int ParseXMLInput(char *xb, struct message *m) {
 			i = strstr(tag+1, "\"") + 1;
 			strncat( m->headers[m->hdrcount], i, strstr(i, "\"") - i );
 			debugmsg("parsed: %s",  m->headers[m->hdrcount]);
-			m->hdrcount++;
+			if( m->hdrcount < MAX_HEADERS - 1 )
+				m->hdrcount++;
+			else
+				break;
 		}
 		res = 1;
 	} else
