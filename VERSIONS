@@ -1,3 +1,15 @@
+1.30
+	ProxyFullyBooted server-side wait
+	ProxyFullyBooted client-side event (Thanks: Ryan Wagoner / rsw686)
+	setsockopt error reporting (Thanks: Ryan Wagoner / rsw686)
+	Additional debug and core dump flag (Thanks: Ryan Wagoner / rsw686)
+	Dead socket handling much cleaner
+	Several buffers increased
+	Much better handling under high-load
+	Fix failure mode when Asterisk connection lost -> never remade.
+	New feature: Blowfish passwords
+
+
 1.28
 	Time for a new tagged version
 	HTTP speed up for large responses
