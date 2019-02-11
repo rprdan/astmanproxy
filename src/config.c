@@ -75,7 +75,7 @@ void *add_server(char *srvspec) {
 }
 
 void *processline(char *s) {
-	char name[80],value[80];
+	char name[80],value[256];
 	int nvstate = 0;
 
 
