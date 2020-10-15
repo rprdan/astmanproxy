@@ -260,6 +260,9 @@ int ReadConfig() {
 	pc.asteriskwritetimeout = 100;
 	pc.clientwritetimeout = 100;
 	pc.sslclhellotimeout = 500;
+	strcpy(pc.outputformat, "standard");
+	strcpy(pc.inputformat, "standard");
+
 
 	sprintf(cfn, "%s/%s", CDIR, CFILE);
 	FP = fopen( cfn, "r" );
