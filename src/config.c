@@ -33,7 +33,8 @@ void *add_server(char *srvspec) {
 	
 	s = srvspec;
 	do {
-		*s = tolower(*s);
+		if ( ccount != 2 && ccount != 3 )
+			*s = tolower(*s);
 		if ( *s == ',' ) {
 			ccount++;
 			continue;
