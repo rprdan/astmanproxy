@@ -686,10 +686,15 @@ int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt)
 {
 	int res = 0;
 	struct iohandler *io;
+	struct iohandler *deflt;
 
 	io = iohandlers;
+	deflt = iohandlers;
 	pthread_mutex_lock(&s->lock);
 	while (io) {
+		if ( !strcasecmp(io->formatname, "standard") )
+			deflt = io;
+
 		if ( !strcasecmp(io->formatname, ifmt) )
 			s->input = io;
 
@@ -701,12 +706,12 @@ int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt)
 
 	/* set default handlers if non match was found */
 	if (!s->output) {
-		s->output = iohandlers;
+		s->output = deflt;
 		res = 1;
 	}
 
 	if (!s->input) {
-		s->input = iohandlers;
+		s->input = deflt;
 		res = 1;
 	}
 	pthread_mutex_unlock(&s->lock);
