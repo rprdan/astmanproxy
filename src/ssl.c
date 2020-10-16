@@ -50,7 +50,7 @@ static int ssl_initialized;
    Initializes all the ssl related stuff here.  */
 int init_secure(char *certfile)
 {
-	SSL_METHOD *meth;
+	const SSL_METHOD *meth;
 
 	SSLeay_add_ssl_algorithms();
 	SSL_load_error_strings();
@@ -83,7 +83,7 @@ int init_secure(char *certfile)
 */
 int client_init_secure(void)
 {
-	SSL_METHOD *meth;
+	const SSL_METHOD *meth;
 
 	/* client init */
 	SSLeay_add_ssl_algorithms();
@@ -322,28 +322,28 @@ int ast_connect(struct mansession *a) {
 
 	fd = connect_nonb(a);
 	if ( fd < 0 )
-	return -1;
+		return -1;
 
 	if (a->server->use_ssl) {
-	debugmsg("initiating ssl connection");
-	if ((s=sec_getslot())!=-1) {	/* find a slot for the ssl handle */
-		sec_channel[s].fd = fd;	 /* remember the real fd */
+		debugmsg("initiating ssl connection");
+		if ((s=sec_getslot())!=-1) {	/* find a slot for the ssl handle */
+			sec_channel[s].fd = fd;	 /* remember the real fd */
 
-		if((ssl=SSL_new(cctx))) {	   /* get a new ssl */
-		sec_channel[s].ssl = ssl;
-		SSL_set_fd(ssl, fd);	/* and attach the real fd */
-		err = SSL_connect(ssl); /* now try and connect */
+			if((ssl=SSL_new(cctx))) {	   /* get a new ssl */
+				sec_channel[s].ssl = ssl;
+				SSL_set_fd(ssl, fd);	/* and attach the real fd */
+				err = SSL_connect(ssl); /* now try and connect */
+			} else
+				debugmsg("couldn't create ssl client context");
+			fd = -(s+2);		/* offset by two and negate */
+						/* this tells us it is a ssl fd */
 		} else
-		debugmsg("couldn't create ssl client context");
-		fd = -(s+2);			/* offset by two and negate */
-					/* this tells us it is a ssl fd */
-	} else
-		debugmsg("couldn't get SSL slot!");
+			debugmsg("couldn't get SSL slot!");
 
-	if (err==-1) {
-		close_sock(fd);		 /* that frees the ssl too */
-		fd = -1;
-	}
+		if (err==-1) {
+			close_sock(fd);		 /* that frees the ssl too */
+			fd = -1;
+		}
 	}
 
 	debugmsg("returning ast_connect with %d", fd);
@@ -356,11 +356,12 @@ int ast_connect(struct mansession *a) {
 
 int connect_nonb(struct mansession *a)
 {
-	int				 flags, n, error;
-	socklen_t		   len;
-	fd_set		  rset, wset;
-	struct timeval  tval;
+	int		flags, n, error;
+	socklen_t	len;
+	fd_set		rset, wset;
+	struct timeval	tval;
 	int nsec = 1, sockfd;
+	int setbuf;
 
 	sockfd = get_real_fd(a->fd);
 
@@ -420,5 +421,11 @@ done:
 		errno = error;
 		return(-1);
 	}
+
+	/* At least attempt to hugely increase our network buffers */
+	setbuf = MAX_LEN_NETBUF;
+	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUFFORCE, (void *)&setbuf, sizeof(setbuf));
+	setsockopt(sockfd, SOL_SOCKET, SO_SNDBUFFORCE, (void *)&setbuf, sizeof(setbuf));
+
 	return(sockfd);
 }

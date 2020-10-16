@@ -18,6 +18,7 @@ int _read(struct mansession *s, struct message *m) {
 
 	for (;;) {
 		res = get_input(s, m->headers[m->hdrcount]);
+		if (debug>5) debugmsg("get_input returned line %d, res %d, %s", m->hdrcount + 1, res, m->headers[m->hdrcount]);
 
 		if (strstr(m->headers[m->hdrcount], "--END COMMAND--")) {
 				if (debug) debugmsg("Found END COMMAND");
@@ -46,37 +47,53 @@ int _read(struct mansession *s, struct message *m) {
 }
 
 int _write(struct mansession *s, struct message *m) {
-	int i;
+	int i, res;
 	char w_buf[1500];	// Usual size of an ethernet frame
 	int at;
 
 	// Combine headers into a buffer for more effective network use.
 	// This can have HUGE benefits under load.
 	at = 0;
+	if ( s->dead )
+		return 0;
 	pthread_mutex_lock(&s->lock);
 
-	if (debug>2) debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
+	if (debug>2)
+		debugmsg("Transmitting standard block of %d lines, fd %d", m->hdrcount, s->fd);
 
-	for (i=0; i<m->hdrcount; i++) {
+	for (i=0; !s->dead && i<m->hdrcount; i++) {
 		if( ! strlen(m->headers[i]) )
 			continue;
-		if( strlen(m->headers[i]) > 1480 || at + strlen(m->headers[i]) > 1480 )
-			if( at ) {
-				ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
-				at = 0;
+		res = 0;
+		if( at > 0 && at + strlen(m->headers[i]) > 1480 ) {
+			/* have existing buffer and we're about to blow that buffer, flush it */
+			res = ast_carefulwrite(s, w_buf, at);
+			at = 0;
+			if ( res < 0 ) {
+				s->dead = 1;
+				break;
 			}
+		}
 		if( strlen(m->headers[i]) > 1480 ) {
-			ast_carefulwrite(s->fd, m->headers[i], strlen(m->headers[i]) , s->writetimeout);
-			ast_carefulwrite(s->fd, "\r\n", 2, s->writetimeout);
+			/* too big, bypass buffer, above block ensures it has been flushed */
+			res = ast_carefulwrite(s, m->headers[i], strlen(m->headers[i]));
+			if ( res >= 0 )
+				res = ast_carefulwrite(s, "\r\n", 2);
 		} else {
 			memcpy( &w_buf[at], m->headers[i], strlen(m->headers[i]) );
 			memcpy( &w_buf[at+strlen(m->headers[i])], "\r\n", 2 );
 			at += strlen(m->headers[i]) + 2;
 		}
+		if ( res < 0 )
+			s->dead = 1;
 	}
-	memcpy( &w_buf[at], "\r\n", 2 );
-	at += 2;
-	ast_carefulwrite(s->fd, w_buf, at, s->writetimeout);
+	if (!s->dead) {
+		memcpy( &w_buf[at], "\r\n", 2 );
+		at += 2;
+		res = ast_carefulwrite(s, w_buf, at);
+		if ( res < 0 )
+			s->dead = 1;
+	}
 	pthread_mutex_unlock(&s->lock);
 
 	return 0;
@@ -92,7 +109,7 @@ int _onconnect(struct mansession *s, struct message *m) {
 		sprintf(banner, "%s/%s\r\n", PROXY_BANNER, PROXY_VERSION);
 	}
 	pthread_mutex_lock(&s->lock);
-	ast_carefulwrite(s->fd, banner, strlen(banner), s->writetimeout);
+	ast_carefulwrite(s, banner, strlen(banner));
 	pthread_mutex_unlock(&s->lock);
 
 	return 0;

@@ -70,26 +70,29 @@ int get_input(struct mansession *s, char *output)
 
 	fds[0].events = POLLIN;
 	do {
-		res = poll(fds, 1, haveline?0:-1);
+		/* The 1 second timeout is so that s->dead can be checked every so often */
+		res = poll(fds, 1, haveline ? 0 : 1000);
+		if (s->dead)
+			return -1;
 		if (res < 0) {
 			if (errno == EINTR) {
-				if (s->dead)
-					return -1;
 				continue;
 			}
 			if (debug)
-				debugmsg("Select returned error");
+				debugmsg("Poll returned error");
 			return -1;
 		} else if (res > 0) {
 			pthread_mutex_lock(&s->lock);
 			/* read from socket; SSL or otherwise */
 			res = m_recv(s->fd, s->inbuf + s->inoffset + s->inlen, sizeof(s->inbuf) - s->inoffset - 1 - s->inlen, 0);
 			pthread_mutex_unlock(&s->lock);
-			if (res < 1)
-				return -1;
+			if (res < 1) {
+				if ( errno != EAGAIN && errno != EWOULDBLOCK )
+					return -1;
+			}
 			break;
 
-		}
+		} /* else res == 0 : timeout */
 	} while(!haveline);
 
 	/* We have some input, but it's not ready for processing */
@@ -139,11 +142,13 @@ const char *ast_inet_ntoa(char *buf, int bufsiz, struct in_addr ia)
 	it on a file descriptor that _DOES_ have NONBLOCK set.  This way,
 	there is only one system call made to do a write, unless we actually
 	have a need to wait.  This way, we get better performance. */
-int ast_carefulwrite(int fd, char *s, int len, int timeoutms)
+int ast_carefulwrite(struct mansession *c, char *s, int len)
 {
 	/* Try to write string, but wait no more than ms milliseconds
 		before timing out */
 	int res=0;
+	int fd = c->fd;
+	int timeoutms = c->writetimeout;
 	struct pollfd fds[1];
 	while(len) {
 		res = m_send(fd, s, len);

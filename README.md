@@ -1,3 +1,15 @@
+### astmanproxy
+
+Based on the original astmanproxy by David C. Troy - Original README below
+
+### Docker
+
+Thanks to Florian Taeger has generously made his Docker wrapper available here:
+https://github.com/ftaeger/docker-astmanproxy
+
+### Original README
+
+```
 astmanproxy README
 (c) 2005-2008 David C. Troy, dave@popvox.com
 ------------------------------------------------------------------
@@ -262,6 +274,8 @@ e.g.:
   dave=securepass,SIP/1002,,,davesaccount,daveserver,y,cdronly|novar
   bill=pass
 
+NOTE: 'secret' can be a Blowfish salted/hashed password. This will be recognised by the fact it starts with a '$'
+
 ===================================================================
 On the 'Action: Challenge' Authentication Mechanism
 
@@ -406,3 +420,4 @@ these are configurable on a per-client basis.
 
 ===================================================================
 (C) 2005-2008 David C. Troy, dave@popvox.com
+```

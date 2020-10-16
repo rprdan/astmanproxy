@@ -20,6 +20,7 @@ extern int SetProcUID( void );
 extern void *proxyaction_do(char *proxyaction, struct message *m, struct mansession *s);
 extern void *ProxyLogin(struct mansession *s, struct message *m);
 extern void *ProxyLogoff(struct mansession *s, struct message *m);
+extern void *ProxyFullyBooted(struct mansession *s);
 extern int  ValidateAction(struct message *m, struct mansession *s, int inbound);
 extern int  AddToStack(struct message *m, struct mansession *s, int withbody);
 extern void DelFromStack(struct message *m, struct mansession *s);
@@ -72,28 +73,31 @@ void leave(int sig) {
 	AddHeader(&cm, PROXY_SHUTDOWN);
 
 	if (debug)
-	debugmsg("Notifying and closing sessions");
+		debugmsg("Notifying and closing sessions");
 	pthread_rwlock_wrlock(&sessionlock);
 	while (sessions) {
 		c = sessions;
 		sessions = sessions->next;
 
+		pthread_mutex_lock(&c->lock);
+		c->dead = 1;
+		pthread_mutex_unlock(&c->lock);
+		if (c->server) {
+			if (debug)
+				debugmsg("asterisk@%s: closing server session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+			c->output->write(c, &sm);
+			logmsg("Shutdown, closed server %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+		} else {
+			if (debug)
+				debugmsg("client@%s: closing client session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+			c->output->write(c, &cm);
+			logmsg("Shutdown, closed client %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
+		}
 		if( c->t ) {
 			ts.tv_sec = 1;	/* Timed join prevents us blocking */
 			ts.tv_nsec = 0;
 			pthread_cancel( c->t );
 			pthread_timedjoin_np( c->t, &res, &ts );
-		}
-		if (c->server) {
-			if (debug)
-				debugmsg("asterisk@%s: closing session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
-			c->output->write(c, &sm);
-			logmsg("Shutdown, closed server %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
-		} else {
-			if (debug)
-				debugmsg("client@%s: closing session", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
-			c->output->write(c, &cm);
-			logmsg("Shutdown, closed client %s", ast_inet_ntoa(iabuf, sizeof(iabuf), c->sin.sin_addr));
 		}
 		close_sock(c->fd);	/* close tcp & ssl socket */
 		FreeStack(c);
@@ -147,6 +151,7 @@ void Usage( void )
 	printf("Usage: astmanproxy [-d|-h|-v]\n");
 	printf(" -d : Start in Debug Mode\n");
 	printf(" -f : Run in foreground. Don't fork\n");
+	printf(" -g : Enable core dumps\n");
 	printf(" -h : Displays this message\n");
 	printf(" -v : Displays version information\n");
 	printf("Start with no options to run as daemon\n");
@@ -171,14 +176,19 @@ void destroy_session(struct mansession *s)
 			prev->next = cur->next;
 		else
 			sessions = cur->next;
+		pthread_rwlock_unlock(&sessionlock);
+
 		debugmsg("Connection closed: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+		pthread_mutex_lock(&s->lock);
 		close_sock(s->fd);	/* close tcp/ssl socket */
+		pthread_mutex_unlock(&s->lock);
 		FreeStack(s);
 		pthread_mutex_destroy(&s->lock);
 		free(s);
-	} else if (debug)
+	} else if (debug) {
 		debugmsg("Trying to delete non-existent session %p?\n", s);
-	pthread_rwlock_unlock(&sessionlock);
+		pthread_rwlock_unlock(&sessionlock);
+	}
 
 	/* If there are no servers and no clients, why are we here? */
 	if (!sessions) {
@@ -242,9 +252,7 @@ int WriteClients(struct message *m) {
 			}
 		}
 
-                if ( pc.authrequired && !c->authenticated ) {
-                        debugmsg("Validate Filtered a message to a not-logged-in client");
-                } else if ( (valret=ValidateAction(m, c, 1)) || autofilter == 1 ) {
+		if ( (valret=ValidateAction(m, c, 1)) || autofilter == 1 ) {
 // If VALRET > 1, then we may want to send a retrospective NewChannel before
 // writing out this event...
 // Send the retrospective Newchannel from the cache (m->session->cache) to this client (c)...
@@ -303,7 +311,7 @@ int WriteClients(struct message *m) {
 				c->output->write(c, m);
 
 			if (c->inputcomplete) {
-				if ( c->untilevent == '\0' || !strncasecmp( event, c->untilevent, MAX_LEN ) ) {
+				if ( *c->untilevent == '\0' || !strncasecmp( event, c->untilevent, MAX_LEN ) ) {
 					pthread_mutex_lock(&c->lock);
 					c->outputcomplete = 1;
 					pthread_mutex_unlock(&c->lock);
@@ -340,7 +348,7 @@ int WriteAsterisk(struct message *m) {
 	pthread_rwlock_rdlock(&sessionlock);
 	s = sessions;
 	while ( s ) {
-		if ( s->server && (s->connected > 0) ) {
+		if ( s->server && (s->connected > 1) ) {
 			if ( !first )
 				first = s;
 			if (*dest && !strcasecmp(dest, s->server->ast_host) )
@@ -366,10 +374,14 @@ void *setactionid(char *actionid, struct message *m, struct mansession *s)
 {
 	pthread_mutex_lock(&s->lock);
 	if( s->autofilter < 2 ) {	// Either save ActionID
-		strncpy(s->actionid, actionid, MAX_LEN);
+		strncpy(s->actionid, actionid, MAX_LEN - 1);
 	} else if( strlen(s->actionid) + strlen(actionid) < MAX_LEN ) {	// Or modify it
 		memmove(actionid+strlen(s->actionid), actionid, strlen(actionid)+strlen(s->actionid));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
+#pragma GCC diagnostic ignored "-Wstringop-overflow="
 		strncpy(actionid, s->actionid, strlen(s->actionid));
+#pragma GCC diagnostic pop
 	}
 	pthread_mutex_unlock(&s->lock);
 
@@ -379,8 +391,10 @@ void *setactionid(char *actionid, struct message *m, struct mansession *s)
 /* Handles proxy client sessions; closely based on session_do from asterisk's manager.c */
 void *session_do(struct mansession *s)
 {
+	struct mansession *svrs = NULL;
 	struct message m;
-	int res;
+	int res, i, tries = 5;
+	char iabuf[INET_ADDRSTRLEN];
 	char *proxyaction, *actionid, *action, *key;
 
 	if (s->input->onconnect)
@@ -396,7 +410,25 @@ void *session_do(struct mansession *s)
 	// Signal settings are not always inherited by threads, so ensure we ignore this one
 	// as it is handled through error returns
 	(void) signal(SIGPIPE, SIG_IGN);
-	for (;;) {
+
+	// Make a valiant effort to wait for an Asterisk connection to be fullybooted.
+	// Bail if not done in 5 seconds.
+
+	while( tries-- ) {
+		pthread_rwlock_rdlock(&sessionlock);
+		svrs = sessions;
+		while ( svrs ) {
+			if ( svrs->server && (svrs->connected > 1) )
+				break;
+			svrs = svrs->next;
+		}
+		pthread_rwlock_unlock(&sessionlock);
+		if ( svrs )
+			break;
+		sleep(1);
+	}
+
+	for (;svrs;) {
 		/* Get a complete message block from input handler */
 		memset( &m, 0, sizeof(struct message) );
 		if (debug > 3)
@@ -407,15 +439,21 @@ void *session_do(struct mansession *s)
 		m.session = s;
 
 		if (res > 0) {
+			if (debug) {
+				for(i=0; i<m.hdrcount; i++) {
+					debugmsg("client@%s got: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr), m.headers[i]);
+				}
+			}
+
 			/* Check for anything that requires proxy-side processing */
 			if (pc.key[0] != '\0' && !s->authenticated) {
-			key = astman_get_header(&m, "ProxyKey");
-			if (!strcmp(key, pc.key) ) {
-				pthread_mutex_lock(&s->lock);
-				s->authenticated = 1;
-				pthread_mutex_unlock(&s->lock);
-			} else
-				break;
+				key = astman_get_header(&m, "ProxyKey");
+				if (!strcmp(key, pc.key) ) {
+					pthread_mutex_lock(&s->lock);
+					s->authenticated = 1;
+					pthread_mutex_unlock(&s->lock);
+				} else
+					break;
 			}
 
 			proxyaction = astman_get_header(&m, "ProxyAction");
@@ -424,6 +462,8 @@ void *session_do(struct mansession *s)
 			if ( !strcasecmp(action, "Login") ) {
 				s->authenticated = 0;
 				ProxyLogin(s, &m);
+				if ( s->authenticated )
+					ProxyFullyBooted(s);
 			} else if ( !strcasecmp(action, "Logoff") )
 				ProxyLogoff(s, &m);
 			else if ( !strcasecmp(action, "Challenge") )
@@ -442,6 +482,7 @@ void *session_do(struct mansession *s)
 			break;
 	}
 
+	s->dead = 1;
 	destroy_session(s);
 	if (debug)
 		debugmsg("--- exiting session_do thread ---");
@@ -483,11 +524,24 @@ void *HandleAsterisk(struct mansession *s)
 				if ( !strcmp("Authentication accepted", astman_get_header(m, "Message")) ) {
 					s->connected = 1;
 					if (debug)
-					debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+						debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+					if ( !strcmp("off", s->server->ast_events) ) {
+						s->connected = 2;
+						if (debug)
+							debugmsg("asterisk@%s: connected successfully (No Fullybooted)!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+					}
 				}
 				if ( !strcmp("Authentication failed", astman_get_header(m, "Message")) ) {
 					s->connected = -1;
 				}
+				continue;
+			} else if ( s->connected == 1 ) {
+				if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
+					s->connected = 2;
+					if (debug)
+						debugmsg("asterisk@%s: connected successfully (Fullybooted)!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+				} else
+					continue;
 			}
 
 			m->session = s;
@@ -508,6 +562,7 @@ void *HandleAsterisk(struct mansession *s)
 leave:
 	if (debug)
 		debugmsg("asterisk@%s: Giving up and exiting thread", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+	s->dead = 1;
 	destroy_session(s);
 	pthread_exit(NULL);
 	return NULL;
@@ -521,8 +576,10 @@ int ConnectAsterisk(struct mansession *s) {
 	/* Don't try to do this if auth has already failed! */
 	if (s->connected < 0 )
 		return 1;
-	else
-		s->connected = 0;
+	s->connected = 0;
+	s->dead = 0;
+	s->inlen = 0;
+	s->inoffset = 0;
 
 	if (debug)
 	debugmsg("asterisk@%s: Connecting (u=%s, p=%s, ssl=%s)", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr),
@@ -530,10 +587,6 @@ int ConnectAsterisk(struct mansession *s) {
 
 	/* Construct auth message just once */
 	memset( &m, 0, sizeof(struct message) );
-	AddHeader(&m, "Action: Login");
-	AddHeader(&m, "Username: %s", s->server->ast_user);
-	AddHeader(&m, "Secret: %s", s->server->ast_pass);
-	AddHeader(&m, "Events: %s", s->server->ast_events);
 
 	s->inlen = 0;
 	s->inoffset = 0;
@@ -550,7 +603,16 @@ int ConnectAsterisk(struct mansession *s) {
 			} else
 				sleep(pc.retryinterval);
 		} else {
-			/* Send login */
+			/* Send login, ensure message object is clean first. */
+			m.hdrcount = 0;
+			m.in_command = 0;
+			m.session = s;
+
+			AddHeader(&m, "Action: Login");
+			AddHeader(&m, "Username: %s", s->server->ast_user);
+			AddHeader(&m, "Secret: %s", s->server->ast_pass);
+			AddHeader(&m, "Events: %s", s->server->ast_events);
+
 			s->output->write(s, &m);
 			res = 0;
 			break;
@@ -633,10 +695,15 @@ int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt)
 {
 	int res = 0;
 	struct iohandler *io;
+	struct iohandler *deflt;
 
 	io = iohandlers;
+	deflt = iohandlers;
 	pthread_mutex_lock(&s->lock);
 	while (io) {
+		if ( !strcasecmp(io->formatname, "standard") )
+			deflt = io;
+
 		if ( !strcasecmp(io->formatname, ifmt) )
 			s->input = io;
 
@@ -648,12 +715,12 @@ int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt)
 
 	/* set default handlers if non match was found */
 	if (!s->output) {
-		s->output = iohandlers;
+		s->output = deflt;
 		res = 1;
 	}
 
 	if (!s->input) {
-		s->input = iohandlers;
+		s->input = deflt;
 		res = 1;
 	}
 	pthread_mutex_unlock(&s->lock);
@@ -760,15 +827,16 @@ static void *accept_thread()
 
 int main(int argc, char *argv[])
 {
-	struct sockaddr_in serv_sock_addr, client_sock_addr; 
-	int cli_addrlen;
+	struct sockaddr_in serv_sock_addr; 
 	struct linger lingerstruct;	/* for socket reuse */
 	int flag;				/* for socket reuse */
 	pid_t pid;
 	char i;
+	struct rlimit l;
+	int core = 0;
 
 	/* Figure out if we are in debug mode, handle other switches */
-	while (( i = getopt( argc, argv, "dhvf" ) ) != EOF )
+	while (( i = getopt( argc, argv, "dhvfg" ) ) != EOF )
 	{
 		switch( i ) {
 			case 'f':
@@ -776,6 +844,9 @@ int main(int argc, char *argv[])
 				break;
 			case 'd':
 				debug++;
+				break;
+			case 'g':
+				core = 1;
 				break;
 			case 'h':
 				Usage();
@@ -796,9 +867,34 @@ int main(int argc, char *argv[])
 	LoadHandlers();
 	debugmsg("loaded handlers");
 
+
+	if(core) {
+		memset(&l, 0, sizeof(l));
+		l.rlim_cur = RLIM_INFINITY;
+		l.rlim_max = RLIM_INFINITY;
+		if (setrlimit(RLIMIT_CORE, &l)) {
+			fprintf(stderr, "Unable to disable core size resource limit: %s\n", strerror(errno));
+		}
+	}
+
 	if (SetProcUID()) {
 		fprintf(stderr,"Cannot set user/group!	Check proc_user and proc_group config setting!\n");
 		exit(1);
+	}
+
+
+	if(core) {
+		if (prctl(PR_SET_DUMPABLE, 1, 0, 0, 0) < 0) {
+			fprintf(stderr, "Unable to set the process for core dumps after changing to a non-root user. %s\n", strerror(errno));
+		}
+
+		char dir[PATH_MAX];
+		if (!getcwd(dir, sizeof(dir)) || eaccess(dir, W_OK)) {
+			fprintf(stderr, "Unable to write to the running directory (%s).  Changing to '/tmp'.\n", strerror(errno));
+			if (chdir("/tmp")) {
+				fprintf(stderr, "chdir(\"/\") failed?!! %s\n", strerror(errno));
+			}
+		}
 	}
 
 	/* If we are not in debug mode, then fork to background */
@@ -847,11 +943,12 @@ int main(int argc, char *argv[])
 	serv_sock_addr.sin_port = htons((short)pc.listen_port);
 
 	/* Set listener socket re-use options */
-	flag = 1;
-	setsockopt(asock, SOL_SOCKET, SO_REUSEADDR, (void *)&flag, sizeof(flag));
+	if(setsockopt(asock, SOL_SOCKET, SO_REUSEADDR, (void *)&flag, sizeof(flag)) < 0)
+		fprintf(stderr,"Error setting SO_REUSEADDR on listener socket!\n");
 	lingerstruct.l_onoff = 1;
 	lingerstruct.l_linger = 5;
-	setsockopt(asock, SOL_SOCKET, SO_LINGER, (void *)&lingerstruct, sizeof(lingerstruct));
+	if(setsockopt(asock, SOL_SOCKET, SO_LINGER, (void *)&lingerstruct, sizeof(lingerstruct)) < 0)
+		fprintf(stderr,"Error setting SO_LINGER on listener socket!\n");
 	
 	if (bind(asock, (struct sockaddr *) &serv_sock_addr, sizeof serv_sock_addr ) < 0) {
 		fprintf(stderr,"Cannot bind to listener socket!\n");
@@ -859,7 +956,6 @@ int main(int argc, char *argv[])
 	}
 
 	listen(asock, 5);
-	cli_addrlen = sizeof(client_sock_addr);
 	if (debug)
 		debugmsg("Listening for connections");
 	logmsg("Proxy Started: Listening for connections");

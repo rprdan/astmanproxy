@@ -119,7 +119,7 @@ int ParseHTTPInput(char *buf, struct message *m) {
 
 int HTTPHeader(struct mansession *s, char *status) {
 
-
+	int res;
 	time_t t;
 	struct tm tm;
 	char date[80];
@@ -151,7 +151,9 @@ int HTTPHeader(struct mansession *s, char *status) {
 
 	pthread_mutex_lock(&s->lock);
 	s->inputcomplete = 1;
-	ast_carefulwrite(s->fd, hdr, strlen(hdr), s->writetimeout);
+	res = ast_carefulwrite(s, hdr, strlen(hdr));
+	if ( res < 0 )
+		s->dead = 1;
 	pthread_mutex_unlock(&s->lock);
 	debugmsg("http header: %s", hdr);
 
@@ -163,7 +165,7 @@ int _read(struct mansession *s, struct message *m) {
 	/* Note: No single line may be longer than MAX_LEN/s->inbuf, as per get_input */
 	/* No HTTP Input may be longer than BUFSIZE */
 
-	char line[MAX_LEN], method[10], formdata[MAX_LEN], status[15];
+	char line[MAX_LEN], method[10], formdata[MAX_LEN], status[20];
 	int res, clength = 0;
 	int timer = 30000;
 
@@ -195,7 +197,7 @@ int _read(struct mansession *s, struct message *m) {
 			if ( !clength && !strncasecmp(line, "Content-Length: ", 16) )
 				clength = atoi(line+16);
 
-			if ( s->untilevent != '\0' && !strncasecmp(line, "X-Until-Event: ", 15) )
+			if ( *s->untilevent != '\0' && !strncasecmp(line, "X-Until-Event: ", 15) )
 				strncpy(s->untilevent, line+15, MAX_LEN-1);
 
 			if ( !strncasecmp(line, "X-Maxtime: ", 11) )
@@ -203,7 +205,11 @@ int _read(struct mansession *s, struct message *m) {
 
 			if (!*method) {
 				if ( !strncmp(line,"POST",4) ) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
+#pragma GCC diagnostic ignored "-Wstringop-overflow="
 					strncpy(method, line, 4);
+#pragma GCC diagnostic pop
 				} else if ( !strncmp(line,"GET",3)) {
 				if ( strlen(line) > 14 ) {
 					/* GET / HTTP/1.1 ---- this is bad */

@@ -18,6 +18,9 @@
 #include <dirent.h>
 #include <errno.h>
 #include <dlfcn.h>
+#include <sys/resource.h>
+#include <sys/prctl.h>
+#include <libgen.h>
 #ifdef __APPLE__
 	#include "poll-compat.h"
 #else
@@ -27,7 +30,8 @@
 #define BUFSIZE		 1024
 #define MAX_HEADERS	 256
 #define MAX_LEN		 1024
-#define MAX_LEN_INBUF	 (1024*1024)
+#define MAX_LEN_INBUF	 (4*1024*1024)
+#define MAX_LEN_NETBUF	 (2*1024*1024)
 #define MAX_STACK	 1024
 #define MAX_STACKDATA	 (1024*32)
 
@@ -42,7 +46,7 @@
 
 struct ast_server {
 	char nickname[80];
-	char ast_host[40];
+	char ast_host[80];
 	char ast_port[10];
 	char ast_user[80];
 	char ast_pass[80];
@@ -172,7 +176,7 @@ int get_input_block(struct mansession *s, struct message *m);
 int get_input(struct mansession *s, char *output);
 int SetIOHandlers(struct mansession *s, char *ifmt, char *ofmt);
 void destroy_session(struct mansession *s);
-int ast_carefulwrite(int fd, char *s, int len, int timeoutms);
+int ast_carefulwrite(struct mansession *c, char *s, int len);
 extern void *SendError(struct mansession *s, char *errmsg, char *actionid);
 
 int close_sock(int socket);

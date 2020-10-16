@@ -33,7 +33,8 @@ void *add_server(char *srvspec) {
 	
 	s = srvspec;
 	do {
-		*s = tolower(*s);
+		if ( ccount != 2 && ccount != 3 )
+			*s = tolower(*s);
 		if ( *s == ',' ) {
 			ccount++;
 			continue;
@@ -75,7 +76,7 @@ void *add_server(char *srvspec) {
 }
 
 void *processline(char *s) {
-	char name[80],value[80];
+	char name[80],value[256];
 	int nvstate = 0;
 
 
@@ -97,9 +98,23 @@ void *processline(char *s) {
 				break;
 			if ( *s == '=' ) {
 				nvstate = 1;
+				if( !strcmp(name,"host") )
+					nvstate = 3;
 				continue;
 			}
-		} else {
+		} else if ( nvstate == 3 ) {    /* host= line contains passwords etc */
+			if ( strlen(value) == 0 && *s == '"' ) {
+				/* if the very first character is a '"' then
+				* we still go into quoted mode */
+				nvstate = 2;
+				continue;
+			}
+
+			if ( *s == ' ' || *s == '\t')
+				continue;
+			if ( *s == ';' || *s == '#' || *s == '\r' || *s == '\n' )
+				break;
+		} else {			/* nvstate == 2 , quoted/literal line */
 			if ( *s == '"' || *s == ';' || *s == '#' || *s == '\r' || *s == '\n' )
 				break;
 		}
@@ -174,7 +189,7 @@ int LoadHandlers() {
 
 	void *dlhandle = NULL;
 	const char *error;
-	char fmt[20], moddir[80] = MDIR, modfile[80];
+	char fmt[20], moddir[200] = MDIR, modfile[256];
 	DIR *mods;
 	struct dirent *d;
 	void *rh, *wh, *och;
@@ -188,10 +203,10 @@ int LoadHandlers() {
 		/* Must end in .so to load it.  */
 		if ( (strlen(d->d_name) > 3) && !strcasecmp(d->d_name + strlen(d->d_name) - 3, ".so") ) {
 
-			memset(fmt, 0, sizeof fmt);
-			strncpy(fmt, d->d_name, strlen(d->d_name) - 3);
+			sprintf(fmt, "%.19s", d->d_name);
+			fmt[strlen(fmt) - 3] = '\0';
 
-			sprintf(modfile, "%s/%s", moddir, d->d_name);
+			sprintf(modfile, "%.199s/%.20s", moddir, d->d_name);
 			if (debug)
 				debugmsg("loading: module %s (%s)", fmt, modfile);
 
@@ -260,6 +275,9 @@ int ReadConfig() {
 	pc.asteriskwritetimeout = 100;
 	pc.clientwritetimeout = 100;
 	pc.sslclhellotimeout = 500;
+	strcpy(pc.outputformat, "standard");
+	strcpy(pc.inputformat, "standard");
+
 
 	sprintf(cfn, "%s/%s", CDIR, CFILE);
 	FP = fopen( cfn, "r" );

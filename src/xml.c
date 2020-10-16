@@ -67,17 +67,19 @@ void *setdoctag(char *tag, struct mansession *s) {
 }
 
 int _write(struct mansession *s, struct message *m) {
-	int i;
+	int i, res;
 	char buf[BUFSIZE], outstring[MAX_LEN*3], xmlescaped[MAX_LEN*3], xmldoctag[MAX_LEN];
 	char *dpos, *lpos;
 
 	setdoctag(xmldoctag, m->session);
-	sprintf(buf, "<%s>\r\n", xmldoctag);
+	sprintf(buf, "<%.*s>\r\n", BUFSIZE - 5, xmldoctag);
 
 	pthread_mutex_lock(&s->lock);
-	ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
+	res = ast_carefulwrite(s, buf, strlen(buf));
+	if ( res < 0 )
+		s->dead = 1;
 
-	for (i=0; i<m->hdrcount; i++) {
+	for (i=0; !s->dead && i<m->hdrcount; i++) {
 		memset(xmlescaped, 0, sizeof xmlescaped);
 		xml_quote_string(m->headers[i], xmlescaped);
 		lpos = xmlescaped;
@@ -89,11 +91,17 @@ int _write(struct mansession *s, struct message *m) {
 			strncat(outstring, dpos+2, strlen(dpos)-2);
 			strcat(outstring, "\"/>\r\n");
 		} else
-			sprintf(outstring, " <%s Value=\"%s\"/>\r\n", XML_UNPARSED, lpos);
-		ast_carefulwrite(s->fd, outstring, strlen(outstring), s->writetimeout);
+			sprintf(outstring, " <%s Value=\"%.*s\"/>\r\n", XML_UNPARSED, (MAX_LEN*3) - 16 - (int)strlen(XML_UNPARSED), lpos);
+		res = ast_carefulwrite(s, outstring, strlen(outstring));
+		if ( res < 0 )
+			s->dead = 1;
 	}
-	sprintf(buf, "</%s>\r\n\r\n", xmldoctag);
-	ast_carefulwrite(s->fd, buf, strlen(buf), s->writetimeout);
+	sprintf(buf, "</%.*s>\r\n\r\n", BUFSIZE - 8, xmldoctag);
+	if ( !s->dead ) {
+		res = ast_carefulwrite(s, buf, strlen(buf));
+		if ( res < 0 )
+			s->dead = 1;
+	}
 	pthread_mutex_unlock(&s->lock);
 
 	return 0;
@@ -149,7 +157,10 @@ int ParseXMLInput(char *xb, struct message *m) {
 			i = strstr(tag+1, "\"") + 1;
 			strncat( m->headers[m->hdrcount], i, strstr(i, "\"") - i );
 			debugmsg("parsed: %s",  m->headers[m->hdrcount]);
-			m->hdrcount++;
+			if( m->hdrcount < MAX_HEADERS - 1 )
+				m->hdrcount++;
+			else
+				break;
 		}
 		res = 1;
 	} else
