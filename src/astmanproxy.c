@@ -311,7 +311,7 @@ int WriteClients(struct message *m) {
 				c->output->write(c, m);
 
 			if (c->inputcomplete) {
-				if ( c->untilevent == '\0' || !strncasecmp( event, c->untilevent, MAX_LEN ) ) {
+				if ( *c->untilevent == '\0' || !strncasecmp( event, c->untilevent, MAX_LEN ) ) {
 					pthread_mutex_lock(&c->lock);
 					c->outputcomplete = 1;
 					pthread_mutex_unlock(&c->lock);
@@ -374,10 +374,14 @@ void *setactionid(char *actionid, struct message *m, struct mansession *s)
 {
 	pthread_mutex_lock(&s->lock);
 	if( s->autofilter < 2 ) {	// Either save ActionID
-		strncpy(s->actionid, actionid, MAX_LEN);
+		strncpy(s->actionid, actionid, MAX_LEN - 1);
 	} else if( strlen(s->actionid) + strlen(actionid) < MAX_LEN ) {	// Or modify it
 		memmove(actionid+strlen(s->actionid), actionid, strlen(actionid)+strlen(s->actionid));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
+#pragma GCC diagnostic ignored "-Wstringop-overflow="
 		strncpy(actionid, s->actionid, strlen(s->actionid));
+#pragma GCC diagnostic pop
 	}
 	pthread_mutex_unlock(&s->lock);
 

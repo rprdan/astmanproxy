@@ -189,7 +189,7 @@ int LoadHandlers() {
 
 	void *dlhandle = NULL;
 	const char *error;
-	char fmt[20], moddir[80] = MDIR, modfile[80];
+	char fmt[20], moddir[200] = MDIR, modfile[256];
 	DIR *mods;
 	struct dirent *d;
 	void *rh, *wh, *och;
@@ -203,10 +203,10 @@ int LoadHandlers() {
 		/* Must end in .so to load it.  */
 		if ( (strlen(d->d_name) > 3) && !strcasecmp(d->d_name + strlen(d->d_name) - 3, ".so") ) {
 
-			memset(fmt, 0, sizeof fmt);
-			strncpy(fmt, d->d_name, strlen(d->d_name) - 3);
+			sprintf(fmt, "%.19s", d->d_name);
+			fmt[strlen(fmt) - 3] = '\0';
 
-			sprintf(modfile, "%s/%s", moddir, d->d_name);
+			sprintf(modfile, "%.199s/%.20s", moddir, d->d_name);
 			if (debug)
 				debugmsg("loading: module %s (%s)", fmt, modfile);
 
