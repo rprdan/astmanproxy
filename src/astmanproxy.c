@@ -521,17 +521,18 @@ void *HandleAsterisk(struct mansession *s)
 					s->connected = 1;
 					if (debug)
 						debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+					if ( !strcmp("off", s->server->ast_events) ) {
+						s->connected = 2;
+						if (debug)
+							debugmsg("asterisk@%s: connected successfully (No Fullybooted)!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+					}
 				}
 				if ( !strcmp("Authentication failed", astman_get_header(m, "Message")) ) {
 					s->connected = -1;
 				}
 				continue;
 			} else if ( s->connected == 1 ) {
-				if ( !strcmp("off", s->server->ast_events) ) {
-					s->connected = 2;
-					if (debug)
-						debugmsg("asterisk@%s: connected successfully (No Fullybooted)!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
-				} else if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
+				if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
 					s->connected = 2;
 					if (debug)
 						debugmsg("asterisk@%s: connected successfully (Fullybooted)!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
