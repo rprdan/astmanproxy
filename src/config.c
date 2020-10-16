@@ -98,9 +98,23 @@ void *processline(char *s) {
 				break;
 			if ( *s == '=' ) {
 				nvstate = 1;
+				if( !strcmp(name,"host") )
+					nvstate = 3;
 				continue;
 			}
-		} else {
+		} else if ( nvstate == 3 ) {    /* host= line contains passwords etc */
+			if ( strlen(value) == 0 && *s == '"' ) {
+				/* if the very first character is a '"' then
+				* we still go into quoted mode */
+				nvstate = 2;
+				continue;
+			}
+
+			if ( *s == ' ' || *s == '\t')
+				continue;
+			if ( *s == ';' || *s == '#' || *s == '\r' || *s == '\n' )
+				break;
+		} else {			/* nvstate == 2 , quoted/literal line */
 			if ( *s == '"' || *s == ';' || *s == '#' || *s == '\r' || *s == '\n' )
 				break;
 		}
