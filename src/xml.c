@@ -72,7 +72,7 @@ int _write(struct mansession *s, struct message *m) {
 	char *dpos, *lpos;
 
 	setdoctag(xmldoctag, m->session);
-	sprintf(buf, "<%s>\r\n", xmldoctag);
+	sprintf(buf, "<%.*s>\r\n", BUFSIZE - 5, xmldoctag);
 
 	pthread_mutex_lock(&s->lock);
 	res = ast_carefulwrite(s, buf, strlen(buf));
@@ -91,12 +91,12 @@ int _write(struct mansession *s, struct message *m) {
 			strncat(outstring, dpos+2, strlen(dpos)-2);
 			strcat(outstring, "\"/>\r\n");
 		} else
-			sprintf(outstring, " <%s Value=\"%s\"/>\r\n", XML_UNPARSED, lpos);
+			sprintf(outstring, " <%s Value=\"%.*s\"/>\r\n", XML_UNPARSED, (MAX_LEN*3) - 16 - (int)strlen(XML_UNPARSED), lpos);
 		res = ast_carefulwrite(s, outstring, strlen(outstring));
 		if ( res < 0 )
 			s->dead = 1;
 	}
-	sprintf(buf, "</%s>\r\n\r\n", xmldoctag);
+	sprintf(buf, "</%.*s>\r\n\r\n", BUFSIZE - 8, xmldoctag);
 	if ( !s->dead ) {
 		res = ast_carefulwrite(s, buf, strlen(buf));
 		if ( res < 0 )

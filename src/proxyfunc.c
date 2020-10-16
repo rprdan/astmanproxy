@@ -455,7 +455,12 @@ int do_AddToStack(char *uniqueid, struct message *m, struct mansession *s, int w
 	}
 	if( !t && (t = malloc(sizeof(struct mstack))) ) {
 		memset(t, 0, sizeof(struct mstack));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-truncation"
+#pragma GCC diagnostic ignored "-Wstringop-overflow="
 		strncpy( t->uniqueid, uniqueid, sizeof(t->uniqueid) );
+#pragma GCC diagnostic pop
+
 		s->depth++;
 		if( prev )
 			prev->next = t;
