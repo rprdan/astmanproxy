@@ -527,10 +527,14 @@ void *HandleAsterisk(struct mansession *s)
 				}
 				continue;
 			} else if ( s->connected == 1 ) {
-				if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
+				if ( !strcmp("off", s->server->ast_events) ) {
 					s->connected = 2;
 					if (debug)
-						debugmsg("asterisk@%s: connected successfully!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+						debugmsg("asterisk@%s: connected successfully (No Fullybooted)!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
+				} else if ( !strcmp("FullyBooted", astman_get_header(m, "Event")) ) {
+					s->connected = 2;
+					if (debug)
+						debugmsg("asterisk@%s: connected successfully (Fullybooted)!", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr) );
 				} else
 					continue;
 			}
