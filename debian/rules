@@ -28,6 +28,9 @@ configure-stamp:
 	touch configure-stamp
 
 
+build-arch: build
+build-indep: build
+
 build: build-stamp
 
 build-stamp: configure-stamp 
@@ -45,14 +48,14 @@ clean:
 	rm -f build-stamp configure-stamp
 
 	# Add here commands to clean up after the build process.
-	-$(MAKE) clean
+	[ ! -f Makefile ] || $(MAKE) clean
 
 	dh_clean 
 
 install: build
 	dh_testdir
 	dh_testroot
-	dh_clean -k 
+	dh_prep 
 	dh_installdirs
 
 	# Add here commands to install the package into debian/astmanproxy.
@@ -62,6 +65,9 @@ install: build
 # Build architecture-independent files here.
 binary-indep: build install
 # We have nothing to do by default.
+
+#override_dh_installinit:
+#	true
 
 # Build architecture-dependent files here.
 binary-arch: build install
@@ -80,6 +86,8 @@ binary-arch: build install
 #	dh_installinit
 #	dh_installcron
 #	dh_installinfo
+	dh_systemd_enable
+	dh_systemd_start
 	dh_installman debian/astmanproxy.1
 	dh_link
 	dh_strip

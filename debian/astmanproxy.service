@@ -1,0 +1,14 @@
+[Unit]
+Description=Aterisk AMI proxy
+After=network.target asterisk.service
+
+[Service]
+Type=simple
+User=nobody
+Group=nogroup
+ExecStart=/usr/sbin/astmanproxy -f
+Restart=always
+RestartSec=4
+
+[Install]
+WantedBy=multi-user.target

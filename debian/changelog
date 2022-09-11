@@ -1,3 +1,9 @@
+astmanproxy (1.30.0+nmu1) UNRELEASED; urgency=medium
+
+  * NMU Lots of stuff I think
+
+ -- Niklas <niklas.larsson@infracom.se>  Sun, 11 Sep 2022 20:54:50 +0200
+
 astmanproxy (1.26) unstable; urgency=low
 
    * Include MANY fixes roll-up from OOB development.
