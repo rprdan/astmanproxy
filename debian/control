@@ -1,5 +1,5 @@
 Source: astmanproxy
-Section: unknown
+Section: main
 Priority: extra
 Maintainer: Steve Davies <steved@ipcortex.co.uk>
 Build-Depends: debhelper (>= 10), libssl-dev

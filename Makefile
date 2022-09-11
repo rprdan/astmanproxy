@@ -148,10 +148,10 @@ install: uninstall all
 	install $(SOBJS) $(MODDIR)
 	install -d $(CONFDIR_REAL)
 	if [ ! -f $(CONF_TARGET) ]; then \
-		install ./configs/$(CONFFILE) $(CONF_TARGET); \
+		install -m 644 ./configs/$(CONFFILE) $(CONF_TARGET); \
 	fi
 	if [ ! -f $(PERM_TARGET) ]; then \
-		install ./configs/$(PERMFILE) $(PERM_TARGET); \
+		install -m 644 ./configs/$(PERMFILE) $(PERM_TARGET); \
 	fi
 	@echo "Installation Complete!"
 
