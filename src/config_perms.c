@@ -1,6 +1,6 @@
 /* 	Asterisk Manager Proxy
 	Copyright (c) 2005-2008 David C. Troy <dave@popvox.com>
-	
+
 	This program is free software, distributed under the terms of
 	the GNU General Public License.
 
@@ -28,7 +28,7 @@ void *add_userperm(char* username, char *userspec, struct proxy_user **pu) {
 	int ccount = 0;
 	struct proxy_user *user;
 	char *s;
-	
+
 	/* malloc ourselves a server credentials structure */
 	user = malloc(sizeof(struct proxy_user));
 	if ( !user ) {
@@ -36,7 +36,7 @@ void *add_userperm(char* username, char *userspec, struct proxy_user **pu) {
 		exit(1);
 	}
 	memset(user, 0, sizeof (struct proxy_user) );
-	
+
 	s = userspec;
 	strncpy(user->username, username, sizeof(user->username)-1 );
 	do {
@@ -120,15 +120,19 @@ void *processperm(char *s, struct proxy_user **pu) {
 	return 0;
 }
 
-int ReadPerms() {
+int ReadPerms(char *user_file) {
 	FILE *FP;
 	char buf[1024];
 	char cfn[80];
 	struct proxy_user *pu;
 
+	if(user_file == NULL){
+		sprintf(cfn, "%s/%s", PDIR, PFILE);
+		user_file = cfn;
+	}
+
 	pu=0;
-	sprintf(cfn, "%s/%s", PDIR, PFILE);
-	FP = fopen( cfn, "r" );
+	FP = fopen( user_file, "r" );
 
 	if ( !FP )
 	{
@@ -137,7 +141,7 @@ int ReadPerms() {
 	}
 
 	if (debug)
-		debugmsg("config: parsing configuration file: %s", cfn);
+		debugmsg("config: parsing configuration file: %s", user_file);
 
 	while ( fgets( buf, sizeof buf, FP ) ) {
 		if (*buf == ';' || *buf == '\r' || *buf == '\n' || *buf == '#') continue;

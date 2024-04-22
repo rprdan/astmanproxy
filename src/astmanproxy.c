@@ -1,6 +1,6 @@
 /* 	Asterisk Manager Proxy
 	Copyright (c) 2005-2008 David C. Troy <dave@popvox.com>
-	
+
 	This program is free software, distributed under the terms of
 	the GNU General Public License.
 
@@ -12,8 +12,8 @@
 #include "astmanproxy.h"
 
 extern int LoadHandlers( void );
-extern void ReadConfig( void );
-extern void ReadPerms( void );
+extern void ReadConfig( char * );
+extern void ReadPerms( char * );
 extern FILE *OpenLogfile( void );
 extern int SetProcUID( void );
 
@@ -42,6 +42,7 @@ static int asock = -1;
 FILE *proxylog;
 int debug = 0;
 int foreground = 0;
+char *user_file = NULL;
 
 void hup(int sig) {
 	if (proxylog) {
@@ -50,7 +51,7 @@ void hup(int sig) {
 	}
 	proxylog = OpenLogfile();
 	logmsg("Received HUP -- reopened log");
-	ReadPerms();
+	ReadPerms(user_file);
 	logmsg("Received HUP -- reread permissions");
 }
 
@@ -154,6 +155,8 @@ void Usage( void )
 	printf(" -g : Enable core dumps\n");
 	printf(" -h : Displays this message\n");
 	printf(" -v : Displays version information\n");
+	printf(" -c file : Overide config filename\n");
+	printf(" -u file : Overide user filename\n");
 	printf("Start with no options to run as daemon\n");
 	return;
 }
@@ -357,7 +360,7 @@ int WriteAsterisk(struct message *m) {
 		s = s->next;
 	}
 	if (!s)
-		s = first;	
+		s = first;
 
 	pthread_rwlock_unlock(&sessionlock);
 
@@ -827,18 +830,27 @@ static void *accept_thread()
 
 int main(int argc, char *argv[])
 {
-	struct sockaddr_in serv_sock_addr; 
+	struct sockaddr_in serv_sock_addr;
 	struct linger lingerstruct;	/* for socket reuse */
 	int flag;				/* for socket reuse */
 	pid_t pid;
 	char i;
 	struct rlimit l;
 	int core = 0;
+	char *config_file = NULL;
 
 	/* Figure out if we are in debug mode, handle other switches */
-	while (( i = getopt( argc, argv, "dhvfg" ) ) != EOF )
+	while (( i = getopt( argc, argv, "c:u:dhvfg" ) ) != -1 )
 	{
 		switch( i ) {
+			case 'c':
+				printf("Using config filename: %s\n", optarg);
+				config_file = optarg;
+				break;
+			case 'u':
+				printf("Using user filename: %s\n", optarg);
+				user_file = optarg;
+				break;
 			case 'f':
  				foreground=1;
 				break;
@@ -854,19 +866,20 @@ int main(int argc, char *argv[])
 			case 'v':
 				Version();
 				exit(0);
+			case ':':
+			    printf("option needs a value\n");
+			    break;
 			case '?':
 				Usage();
 				exit(1);
 		}
 	}
 
-
-	ReadConfig();
+	ReadConfig(config_file);
 	proxylog = OpenLogfile();
 	debugmsg("loading handlers");
 	LoadHandlers();
 	debugmsg("loaded handlers");
-
 
 	if(core) {
 		memset(&l, 0, sizeof(l));
@@ -918,7 +931,7 @@ int main(int argc, char *argv[])
 	pthread_mutex_init(&debuglock, NULL);
 
 	/* Read initial state for user permissions */
-	ReadPerms();
+	ReadPerms(user_file);
 
 	/* Initialize SSL Client-Side Context */
 	client_init_secure();
@@ -939,7 +952,7 @@ int main(int argc, char *argv[])
 		serv_sock_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	else
 		serv_sock_addr.sin_addr.s_addr = inet_addr( pc.listen_addr);
-		
+
 	serv_sock_addr.sin_port = htons((short)pc.listen_port);
 
 	/* Set listener socket re-use options */
@@ -949,7 +962,7 @@ int main(int argc, char *argv[])
 	lingerstruct.l_linger = 5;
 	if(setsockopt(asock, SOL_SOCKET, SO_LINGER, (void *)&lingerstruct, sizeof(lingerstruct)) < 0)
 		fprintf(stderr,"Error setting SO_LINGER on listener socket!\n");
-	
+
 	if (bind(asock, (struct sockaddr *) &serv_sock_addr, sizeof serv_sock_addr ) < 0) {
 		fprintf(stderr,"Cannot bind to listener socket!\n");
 		exit(1);

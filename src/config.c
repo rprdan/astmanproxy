@@ -1,6 +1,6 @@
 /* 	Asterisk Manager Proxy
 	Copyright (c) 2005-2008 David C. Troy <dave@popvox.com>
-	
+
 	This program is free software, distributed under the terms of
 	the GNU General Public License.
 
@@ -21,7 +21,7 @@ void *add_server(char *srvspec) {
 	struct ast_server *srv;
 	char *s;
 	char usessl[10];
-	
+
 	/* malloc ourselves a server credentials structure */
 	srv = malloc(sizeof(struct ast_server));
 	if ( !srv ) {
@@ -30,7 +30,7 @@ void *add_server(char *srvspec) {
 	}
 	memset(srv, 0, sizeof (struct ast_server) );
 	memset(usessl, 0, sizeof (usessl) );
-	
+
 	s = srvspec;
 	do {
 		if ( ccount != 2 && ccount != 3 )
@@ -263,11 +263,10 @@ int LoadHandlers() {
 }
 
 
-int ReadConfig() {
+int ReadConfig(char *config_file) {
 	FILE *FP;
 	char buf[1024];
 	char cfn[80];
-
 
 	memset( &pc, 0, sizeof pc );
 
@@ -278,17 +277,20 @@ int ReadConfig() {
 	strcpy(pc.outputformat, "standard");
 	strcpy(pc.inputformat, "standard");
 
+	if(config_file == NULL){
+		sprintf(cfn, "%s/%s", CDIR, CFILE);
+		config_file = cfn;
+	}
 
-	sprintf(cfn, "%s/%s", CDIR, CFILE);
-	FP = fopen( cfn, "r" );
+	FP = fopen( config_file, "r" );
 
 	if ( !FP ) {
-		fprintf(stderr, "Unable to open config file: %s/%s!\n", CDIR, CFILE);
+		fprintf(stderr, "Unable to open config file: %s!\n", config_file);
 		exit( 1 );
 	}
 
 	if (debug)
-		debugmsg("config: parsing configuration file: %s", cfn);
+		debugmsg("config: parsing configuration file: %s", config_file);
 
 	while ( fgets( buf, sizeof buf, FP ) ) {
 		if (*buf == ';' || *buf == '\r' || *buf == '\n' || *buf == '#') continue;
