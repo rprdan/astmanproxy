@@ -1129,11 +1129,22 @@ int main(int argc, char *argv[])
 		debugmsg("Listening for connections");
 	logmsg("Proxy Started: Listening for connections");
 
-	/* Launch listener thread */
-	accept_thread();
+/* Launch listener thread properly */
+pthread_t accept_tid;
+if (pthread_create(&accept_tid, NULL, accept_thread, NULL) != 0) {
+    fprintf(stderr, "Failed to create accept thread!\n");
+    exit(1);
+}
 
-	pthread_exit(NULL);
-	exit(0);
+/* Start health monitoring thread */
+pthread_t health_tid;
+pthread_create(&health_tid, NULL, health_monitor_thread, NULL);
+
+/* Wait for the accept thread to finish (which should never happen) */
+pthread_join(accept_tid, NULL);
+
+/* If we ever get here, exit cleanly */
+exit(0);
 }
 void *health_monitor_thread(void *arg) {
     (void)arg; // Suppress unused parameter warning
