@@ -1135,3 +1135,33 @@ int main(int argc, char *argv[])
 	pthread_exit(NULL);
 	exit(0);
 }
+void *health_monitor_thread(void *arg) {
+    (void)arg; // Suppress unused parameter warning
+    
+    while (1) {
+        sleep(30); // Check every 30 seconds
+        
+        pthread_rwlock_rdlock(&sessionlock);
+        struct mansession *c = sessions;
+        while (c) {
+            if (!c->server && !c->dead) {
+                // Ping client to check if it's responsive
+                pthread_mutex_lock(&c->lock);
+                if (!c->dead) {
+                    // Simple write test
+                    struct pollfd pfd;
+                    pfd.fd = get_real_fd(c->fd);
+                    pfd.events = POLLOUT;
+                    if (poll(&pfd, 1, 0) < 0) {
+                        debugmsg("Client appears unresponsive, marking as dead");
+                        c->dead = 1;
+                    }
+                }
+                pthread_mutex_unlock(&c->lock);
+            }
+            c = c->next;
+        }
+        pthread_rwlock_unlock(&sessionlock);
+    }
+    return NULL;
+}
