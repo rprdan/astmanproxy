@@ -303,9 +303,29 @@ int WriteClients(struct message *m) {
 				m_temp2.session=m->session;
 				uniqueid = astman_get_header(m, "UniqueID");
 				ResendFromStack(uniqueid, m->session, &m_temp, &m_temp2);
-				c->output->write(c, &m_temp);
-				if( m_temp2.hdrcount )
-					c->output->write(c, &m_temp2);
+				// Check if client is responsive before writing
+				if (!c->dead) {
+					pthread_mutex_lock(&c->lock);
+					if (!c->dead) {
+						int write_result = c->output->write(c, &m_temp);
+						if (write_result < 0) {
+							debugmsg("Write failed to client, marking as dead");
+							c->dead = 1;
+						}
+					}
+					pthread_mutex_unlock(&c->lock);
+				}
+				if( m_temp2.hdrcount && !c->dead ) {
+					pthread_mutex_lock(&c->lock);
+					if (!c->dead) {
+						int write_result = c->output->write(c, &m_temp2);
+						if (write_result < 0) {
+							debugmsg("Write failed to client, marking as dead");
+							c->dead = 1;
+						}
+					}
+					pthread_mutex_unlock(&c->lock);
+				}
  			}
  			if( (valret & ATS_SRCUNIQUE) && m->session ) {
 				struct message m_temp;
@@ -320,9 +340,29 @@ int WriteClients(struct message *m) {
 				if( *uniqueid == '\0' )
 					uniqueid = astman_get_header(m, "Uniqueid1");
 				ResendFromStack(uniqueid, m->session, &m_temp, &m_temp2);
-				c->output->write(c, &m_temp);
-				if( m_temp2.hdrcount )
-					c->output->write(c, &m_temp2);
+				// Check if client is responsive before writing
+				if (!c->dead) {
+					pthread_mutex_lock(&c->lock);
+					if (!c->dead) {
+						int write_result = c->output->write(c, &m_temp);
+						if (write_result < 0) {
+							debugmsg("Write failed to client, marking as dead");
+							c->dead = 1;
+						}
+					}
+					pthread_mutex_unlock(&c->lock);
+				}
+				if( m_temp2.hdrcount && !c->dead ) {
+					pthread_mutex_lock(&c->lock);
+					if (!c->dead) {
+						int write_result = c->output->write(c, &m_temp2);
+						if (write_result < 0) {
+							debugmsg("Write failed to client, marking as dead");
+							c->dead = 1;
+						}
+					}
+					pthread_mutex_unlock(&c->lock);
+				}
  			}
  			if( (valret & ATS_DSTUNIQUE) && m->session ) {
 				struct message m_temp;
@@ -337,24 +377,44 @@ int WriteClients(struct message *m) {
 				if( *uniqueid == '\0' )
 					uniqueid = astman_get_header(m, "Uniqueid2");
 				ResendFromStack(uniqueid, m->session, &m_temp, &m_temp2);
-				c->output->write(c, &m_temp);
-				if( m_temp2.hdrcount )
-					c->output->write(c, &m_temp2);
+				// Check if client is responsive before writing
+				if (!c->dead) {
+					pthread_mutex_lock(&c->lock);
+					if (!c->dead) {
+						int write_result = c->output->write(c, &m_temp);
+						if (write_result < 0) {
+							debugmsg("Write failed to client, marking as dead");
+							c->dead = 1;
+						}
+					}
+					pthread_mutex_unlock(&c->lock);
+				}
+				if( m_temp2.hdrcount && !c->dead ) {
+					pthread_mutex_lock(&c->lock);
+					if (!c->dead) {
+						int write_result = c->output->write(c, &m_temp2);
+						if (write_result < 0) {
+							debugmsg("Write failed to client, marking as dead");
+							c->dead = 1;
+						}
+					}
+					pthread_mutex_unlock(&c->lock);
+				}
  			}
 			if( autofilter != 0 ) {
-    // Check if client is responsive before writing
-    if (!c->dead) {
-        pthread_mutex_lock(&c->lock);
-        if (!c->dead) {
-            int write_result = c->output->write(c, m);
-            if (write_result < 0) {
-                debugmsg("Write failed to client, marking as dead");
-                c->dead = 1;
-            }
-        }
-        pthread_mutex_unlock(&c->lock);
-    }
-}
+				// Check if client is responsive before writing
+				if (!c->dead) {
+					pthread_mutex_lock(&c->lock);
+					if (!c->dead) {
+						int write_result = c->output->write(c, m);
+						if (write_result < 0) {
+							debugmsg("Write failed to client, marking as dead");
+							c->dead = 1;
+						}
+					}
+					pthread_mutex_unlock(&c->lock);
+				}
+			}
 
 			if (c->inputcomplete) {
 				if ( *c->untilevent == '\0' || !strncasecmp( event, c->untilevent, MAX_LEN ) ) {
@@ -373,7 +433,46 @@ int WriteClients(struct message *m) {
 	if( !strcasecmp( event, "Hangup" ) ) {
 		DelFromStack(m, m->session);
 	}
+
+	// Periodic cleanup of dead clients (every 100th message)
+	static int cleanup_counter = 0;
+	if (++cleanup_counter >= 100) {
+		cleanup_counter = 0;
+		cleanup_dead_clients();
+	}
+
 	return 1;
+}
+
+void cleanup_dead_clients(void) {
+    struct mansession *c, *prev = NULL;
+    
+    pthread_rwlock_wrlock(&sessionlock);
+    c = sessions;
+    while (c) {
+        if (c->dead && !c->server) {
+            struct mansession *to_remove = c;
+            if (debug)
+                debugmsg("Cleaning up dead client session");
+            
+            if (prev)
+                prev->next = c->next;
+            else
+                sessions = c->next;
+            
+            c = c->next;
+            
+            // Clean up the dead session
+            close_sock(to_remove->fd);
+            FreeStack(to_remove);
+            pthread_mutex_destroy(&to_remove->lock);
+            free(to_remove);
+        } else {
+            prev = c;
+            c = c->next;
+        }
+    }
+    pthread_rwlock_unlock(&sessionlock);
 }
 
 int WriteAsterisk(struct message *m) {
