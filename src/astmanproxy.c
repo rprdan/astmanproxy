@@ -762,34 +762,36 @@ static void *accept_thread()
 			}
 		}
 
-		/* SSL stuff below */
-		is_encrypted = is_encrypt_request(pc.sslclhellotimeout, as);
-		debugmsg("is_encrypted: %d", is_encrypted);
-		if (is_encrypted > 0) {
-			if (!pc.acceptencryptedconnection) {
-				if( debug )
-					debugmsg("Accepting encrypted connection disabled, closing the connection \n");
-				close_sock(as);
-				continue;
-			} else {
-				if((as = saccept(as)) >= 0 ) {
-					if( debug )
-						debugmsg("Can't accept the ssl connection, since SSL init has failed for certificate reason\n");
-					close_sock(as);
-					continue;
-				}
-			}
-		} else if (is_encrypted == -1) {
-			logmsg("SSL version 2 is unsecure, we don't support it\n");
-			close_sock(as);
-			continue;
-		}
-		if ( (! pc.acceptunencryptedconnection) && (as >= 0)) {
-			logmsg("Unencrypted connections are not accepted and we received an unencrypted connection request\n");
-			close_sock(as);
-			continue;
-		}
-		/* SSL stuff end */
+/* SSL stuff below */
+is_encrypted = is_encrypt_request(pc.sslclhellotimeout, as);
+debugmsg("is_encrypted: %d", is_encrypted);
+if (is_encrypted > 0) {
+    if (!pc.acceptencryptedconnection) {
+        if( debug )
+            debugmsg("Accepting encrypted connection disabled, closing the connection \n");
+        close_sock(as);
+        continue;
+    } else {
+        int ssl_fd = saccept(as);
+        if(ssl_fd == -1) {
+            if( debug )
+                debugmsg("Can't accept the ssl connection, SSL init failed\n");
+            close_sock(as);
+            continue;
+        }
+        as = ssl_fd;  // Use the SSL file descriptor
+    }
+} else if (is_encrypted == -1) {
+    logmsg("SSL version 2 is unsecure, we don't support it\n");
+    close_sock(as);
+    continue;
+}
+if ( (! pc.acceptunencryptedconnection) && (as >= 0)) {
+    logmsg("Unencrypted connections are not accepted and we received an unencrypted connection request\n");
+    close_sock(as);
+    continue;
+}
+/* SSL stuff end */
 
 		s = malloc(sizeof(struct mansession));
 		if ( !s ) {
