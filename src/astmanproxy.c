@@ -573,12 +573,23 @@ void *session_do(struct mansession *s)
 		sleep(1);
 	}
 
-	for (;svrs;) {
-		/* Get a complete message block from input handler */
-		memset( &m, 0, sizeof(struct message) );
-		if (debug > 3)
-			debugmsg("calling %s_read...", s->input->formatname);
-		res = s->input->read(s, &m);
+for (;svrs;) {
+    /* Check if we should exit */
+    if (s->dead) {
+        break;
+    }
+    
+    /* Get a complete message block from input handler */
+    memset( &m, 0, sizeof(struct message) );
+    if (debug > 3)
+        debugmsg("calling %s_read...", s->input->formatname);
+    res = s->input->read(s, &m);
+    
+    /* Handle read errors more gracefully */
+    if (res < 0) {
+        debugmsg("Read error from client, exiting session");
+        break;
+    }
 		if (debug > 3)
 			debugmsg("%s_read result = %d", s->input->formatname, res);
 		m.session = s;
