@@ -489,6 +489,7 @@ void *session_do(struct mansession *s)
 	destroy_session(s);
 	if (debug)
 		debugmsg("--- exiting session_do thread ---");
+	free(m);
 	pthread_exit(NULL);
 	return NULL;
 }
