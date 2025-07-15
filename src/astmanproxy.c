@@ -165,6 +165,8 @@ void destroy_session(struct mansession *s)
 {
 	struct mansession *cur, *prev = NULL;
 	char iabuf[INET_ADDRSTRLEN];
+	void *thread_result;
+	struct timespec timeout;
 
 	pthread_rwlock_wrlock(&sessionlock);
 	cur = sessions;
@@ -182,9 +184,34 @@ void destroy_session(struct mansession *s)
 		pthread_rwlock_unlock(&sessionlock);
 
 		debugmsg("Connection closed: %s", ast_inet_ntoa(iabuf, sizeof(iabuf), s->sin.sin_addr));
+
+		// First, mark the session as dead to signal the thread to exit
+		pthread_mutex_lock(&s->lock);
+		s->dead = 1;
+		pthread_mutex_unlock(&s->lock);
+
+		// If there's a thread associated with this session, clean it up properly
+		if (s->t) {
+			// Cancel the thread
+			pthread_cancel(s->t);
+			
+			// Wait for the thread to finish, but don't wait forever
+			timeout.tv_sec = 2;  // 2 second timeout
+			timeout.tv_nsec = 0;
+			
+			if (pthread_timedjoin_np(s->t, &thread_result, &timeout) != 0) {
+				// If timed join fails, force kill and detach
+				if (debug)
+					debugmsg("Thread did not exit cleanly, detaching");
+				pthread_detach(s->t);
+			}
+		}
+
+		// Now it's safe to clean up the session resources
 		pthread_mutex_lock(&s->lock);
 		close_sock(s->fd);	/* close tcp/ssl socket */
 		pthread_mutex_unlock(&s->lock);
+		
 		FreeStack(s);
 		pthread_mutex_destroy(&s->lock);
 		free(s);
@@ -194,9 +221,13 @@ void destroy_session(struct mansession *s)
 	}
 
 	/* If there are no servers and no clients, why are we here? */
+	pthread_rwlock_rdlock(&sessionlock);
 	if (!sessions) {
+		pthread_rwlock_unlock(&sessionlock);
 		logmsg("Cannot connect to any servers! Leaving!");
 		leave(0);
+	} else {
+		pthread_rwlock_unlock(&sessionlock);
 	}
 }
 
