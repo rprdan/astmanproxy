@@ -341,8 +341,20 @@ int WriteClients(struct message *m) {
 				if( m_temp2.hdrcount )
 					c->output->write(c, &m_temp2);
  			}
-			if( autofilter != 0 )
-				c->output->write(c, m);
+			if( autofilter != 0 ) {
+    // Check if client is responsive before writing
+    if (!c->dead) {
+        pthread_mutex_lock(&c->lock);
+        if (!c->dead) {
+            int write_result = c->output->write(c, m);
+            if (write_result < 0) {
+                debugmsg("Write failed to client, marking as dead");
+                c->dead = 1;
+            }
+        }
+        pthread_mutex_unlock(&c->lock);
+    }
+}
 
 			if (c->inputcomplete) {
 				if ( *c->untilevent == '\0' || !strncasecmp( event, c->untilevent, MAX_LEN ) ) {
