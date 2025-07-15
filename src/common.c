@@ -144,30 +144,47 @@ const char *ast_inet_ntoa(char *buf, int bufsiz, struct in_addr ia)
 	have a need to wait.  This way, we get better performance. */
 int ast_carefulwrite(struct mansession *c, char *s, int len)
 {
-	/* Try to write string, but wait no more than ms milliseconds
-		before timing out */
-	int res=0;
-	int fd = c->fd;
-	int timeoutms = c->writetimeout;
-	struct pollfd fds[1];
-	while(len) {
-		res = m_send(fd, s, len);
-		if ((res < 0) && (errno != EAGAIN)) {
-			return -1;
-		}
-		if (res < 0) res = 0;
-		len -= res;
-		s += res;
-		res = 0;
-		if (len) {
-			fds[0].fd = get_real_fd(fd);
-			fds[0].events = POLLOUT;
-			/* Wait until writable again */
-			res = poll(fds, 1, timeoutms);
-			if (res < 1)
-				return -1;
-		}
-	}
-	return res;
+    /* Try to write string, but wait no more than ms milliseconds
+        before timing out */
+    int res=0;
+    int fd = c->fd;
+    int timeoutms = c->writetimeout;
+    struct pollfd fds[1];
+    int total_time = 0;
+    
+    // Enforce maximum total timeout of 5 seconds regardless of configured timeout
+    int max_total_timeout = 5000;
+    
+    while(len && total_time < max_total_timeout) {
+        res = m_send(fd, s, len);
+        if ((res < 0) && (errno != EAGAIN)) {
+            debugmsg("Write error: %s", strerror(errno));
+            return -1;
+        }
+        if (res < 0) res = 0;
+        len -= res;
+        s += res;
+        res = 0;
+        if (len) {
+            fds[0].fd = get_real_fd(fd);
+            fds[0].events = POLLOUT;
+            /* Wait until writable again */
+            int poll_timeout = (timeoutms < (max_total_timeout - total_time)) ? 
+                              timeoutms : (max_total_timeout - total_time);
+            res = poll(fds, 1, poll_timeout);
+            total_time += poll_timeout;
+            if (res < 1) {
+                debugmsg("Write timeout after %d ms", total_time);
+                return -1;
+            }
+        }
+    }
+    
+    if (total_time >= max_total_timeout) {
+        debugmsg("Write operation exceeded maximum timeout");
+        return -1;
+    }
+    
+    return res;
 }
 
