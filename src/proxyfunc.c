@@ -652,6 +652,8 @@ int IsInStack(char* uniqueid, struct mansession *s)
 void ResendFromStack(char* uniqueid, struct mansession *s, struct message *m, struct message *m2)
 {
 	struct mstack *t;
+	char *message_copy = NULL;
+	char *state_copy = NULL;
 
 	if( !m )
 		return;
@@ -659,50 +661,67 @@ void ResendFromStack(char* uniqueid, struct mansession *s, struct message *m, st
 	if( debug )
 		debugmsg("ResendFromStack: %s", uniqueid);
 
+	// First, find the entry and copy data while holding the lock (minimize lock time)
 	pthread_mutex_lock(&s->lock);
 	t = s->stack;
 
 	while( t ) {
 		if( !strncmp( t->uniqueid, uniqueid, sizeof(t->uniqueid) ) )
 		{
-			// Got message, pull from cache.
-			int i, h, j;
+			// Found the entry, copy the data
 			if( t->message ) {
-				for( i=0,h=0,j=0; i < strlen(t->message) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
-					if( t->message[i] == '\n' || i-j >= MAX_LEN ) {
-						strncpy( m->headers[h], t->message + j, i-j );
-						m->headers[h][MAX_LEN-1] = '\0';
-						j = i + 1;
-						if( debug )
-							debugmsg("remade: %s", m->headers[h]);
-						h++;
-					}
-				}
-				m->hdrcount = h;
-			} else
-				m->hdrcount = 0;
-
+				message_copy = malloc(strlen(t->message) + 1);
+				if( message_copy )
+					strcpy(message_copy, t->message);
+			}
 			if( t->state ) {
-				for( i=0,h=0,j=0; i < strlen(t->state) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
-					if( t->state[i] == '\n' || i-j >= MAX_LEN ) {
-						strncpy( m2->headers[h], t->state + j, i-j );
-						m2->headers[h][MAX_LEN-1] = '\0';
-						j = i + 1;
-						if( debug )
-							debugmsg("remade: %s", m2->headers[h]);
-						h++;
-					}
-				}
-				m2->hdrcount = h;
-			} else
-				m->hdrcount = 0;
-
-			pthread_mutex_unlock(&s->lock);
-			return;
+				state_copy = malloc(strlen(t->state) + 1);
+				if( state_copy )
+					strcpy(state_copy, t->state);
+			}
+			break;
 		}
 		t = t->next;
 	}
 	pthread_mutex_unlock(&s->lock);
+
+	// Now process the copied data outside the lock
+	if( message_copy ) {
+		int i, h, j;
+		for( i=0,h=0,j=0; i < strlen(message_copy) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
+			if( message_copy[i] == '\n' || i-j >= MAX_LEN ) {
+				strncpy( m->headers[h], message_copy + j, i-j );
+				m->headers[h][MAX_LEN-1] = '\0';
+				j = i + 1;
+				if( debug )
+					debugmsg("remade: %s", m->headers[h]);
+				h++;
+			}
+		}
+		m->hdrcount = h;
+		free(message_copy);
+	} else {
+		m->hdrcount = 0;
+	}
+
+	if( state_copy ) {
+		int i, h, j;
+		for( i=0,h=0,j=0; i < strlen(state_copy) && i < MAX_STACKDATA - 1 && h < MAX_HEADERS - 1; i++ ) {
+			if( state_copy[i] == '\n' || i-j >= MAX_LEN ) {
+				strncpy( m2->headers[h], state_copy + j, i-j );
+				m2->headers[h][MAX_LEN-1] = '\0';
+				j = i + 1;
+				if( debug )
+					debugmsg("remade: %s", m2->headers[h]);
+				h++;
+			}
+		}
+		m2->hdrcount = h;
+		free(state_copy);
+	} else {
+		m2->hdrcount = 0;
+	}
+
 	return;
 }
 
