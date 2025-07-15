@@ -187,4 +187,3 @@ int ast_carefulwrite(struct mansession *c, char *s, int len)
     
     return res;
 }
-
